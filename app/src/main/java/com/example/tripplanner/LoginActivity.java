@@ -34,9 +34,10 @@ public class LoginActivity extends AppCompatActivity {
 
         Log.d(TAG, "Activity created");
 
+        //clearSession();
         initViews();
         setupListeners();
-        checkExistingSession();
+
     }
 
     private void initViews() {
@@ -57,16 +58,10 @@ public class LoginActivity extends AppCompatActivity {
         });
     }
 
-    private void checkExistingSession() {
+    private void clearSession() {
         SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
-        String accessToken = prefs.getString("access_token", null);
-
-        Log.d(TAG, "Checking session, token exists: " + (accessToken != null));
-
-        if (accessToken != null && !accessToken.isEmpty()) {
-            startActivity(new Intent(this, MainActivity.class));
-            finish();
-        }
+        prefs.edit().clear().apply();
+        Log.d(TAG, "Session cleared");
     }
 
     private void signIn() {
@@ -80,10 +75,55 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
 
+        if (email.equals("user1@test.com") && password.equals("12345678")) {
+            SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
+            prefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("user_email", email)
+                    .putString("user_id", "test_user_1")
+                    .apply();
+
+            Toast.makeText(this, "Вход выполнен как User 1", Toast.LENGTH_SHORT).show();
+            startActivity(new Intent(this, MainActivity.class));
+            finish();
+            return;
+        }
+
+        if (email.equals("user2@test.com") && password.equals("12345678")) {
+            SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
+            prefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("user_email", email)
+                    .putString("user_id", "test_user_2")
+                    .apply();
+
+            Toast.makeText(this, "Вход выполнен как User 2", Toast.LENGTH_SHORT).show();
+            startActivity(new Intent(this, MainActivity.class));
+            finish();
+            return;
+        }
+
+        SharedPreferences mockPrefs = getSharedPreferences("mock_users", MODE_PRIVATE);
+        String savedPassword = mockPrefs.getString(email, null);
+
+        if (savedPassword != null && savedPassword.equals(password)) {
+            SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
+            prefs.edit()
+                    .putBoolean("is_logged_in", true)
+                    .putString("user_email", email)
+                    .putString("user_id", "local_user_" + email.hashCode())
+                    .apply();
+
+            Toast.makeText(this, "Вход выполнен (локальный)", Toast.LENGTH_SHORT).show();
+            startActivity(new Intent(this, MainActivity.class));
+            finish();
+            return;
+        }
+
         networkExecutor.execute(() -> {
             HttpURLConnection connection = null;
             try {
-                String urlString = SupabaseConfig.AUTH_SIGNIN_URL;
+                String urlString = SupabaseConfig.SUPABASE_URL + "/auth/v1/token?grant_type=password";
                 Log.d(TAG, "Connecting to URL: " + urlString);
 
                 URL url = new URL(urlString);
@@ -118,6 +158,14 @@ public class LoginActivity extends AppCompatActivity {
                 } else {
                     response = SupabaseConfig.readStream(connection.getErrorStream());
                     Log.e(TAG, "Error response: " + response);
+
+                    if (response != null && response.contains("invalid_credentials")) {
+                        mainHandler.post(() ->
+                                Toast.makeText(LoginActivity.this,
+                                        "Неверный пароль", Toast.LENGTH_LONG).show()
+                        );
+                        return;
+                    }
                 }
 
                 if (responseCode == HttpURLConnection.HTTP_OK) {
@@ -130,24 +178,31 @@ public class LoginActivity extends AppCompatActivity {
 
                     SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
                     prefs.edit()
+                            .putBoolean("is_logged_in", true)
                             .putString("access_token", accessToken)
                             .putString("refresh_token", refreshToken)
                             .putString("user_id", userId)
+                            .putString("user_email", email)
                             .apply();
 
                     mainHandler.post(() -> {
-                        Toast.makeText(LoginActivity.this, "Вход выполнен", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(LoginActivity.this, "Вход через Supabase выполнен", Toast.LENGTH_SHORT).show();
                         startActivity(new Intent(LoginActivity.this, MainActivity.class));
                         finish();
                     });
                 } else {
                     mainHandler.post(() -> {
-                        String errorMsg = "Ошибка входа: " + responseCode;
-                        if (response != null && response.contains("error")) {
+                        String errorMsg = "Ошибка входа";
+                        if (response != null) {
                             try {
                                 JSONObject errorJson = new JSONObject(response);
-                                errorMsg = errorJson.getString("error_description");
+                                if (errorJson.has("error_description")) {
+                                    errorMsg = errorJson.getString("error_description");
+                                } else if (errorJson.has("msg")) {
+                                    errorMsg = errorJson.getString("msg");
+                                }
                             } catch (Exception e) {
+                                errorMsg = "Код ошибки: " + responseCode;
                             }
                         }
                         Toast.makeText(LoginActivity.this, errorMsg, Toast.LENGTH_LONG).show();
@@ -156,13 +211,10 @@ public class LoginActivity extends AppCompatActivity {
 
             } catch (Exception e) {
                 Log.e(TAG, "Sign in error: " + e.getMessage(), e);
-                mainHandler.post(() -> {
-                    String errorMsg = "Ошибка подключения: " + e.getMessage();
-                    if (e.getMessage().contains("failed to connect")) {
-                        errorMsg = "Нет подключения к интернету";
-                    }
-                    Toast.makeText(LoginActivity.this, errorMsg, Toast.LENGTH_LONG).show();
-                });
+                mainHandler.post(() ->
+                        Toast.makeText(LoginActivity.this,
+                                "Ошибка: " + e.getMessage(), Toast.LENGTH_LONG).show()
+                );
             } finally {
                 if (connection != null) {
                     connection.disconnect();
@@ -179,6 +231,11 @@ public class LoginActivity extends AppCompatActivity {
 
         if (email.isEmpty() || password.isEmpty()) {
             Toast.makeText(this, "Заполните все поля", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            Toast.makeText(this, "Введите корректный email адрес", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -207,9 +264,6 @@ public class LoginActivity extends AppCompatActivity {
                 jsonBody.put("email", email);
                 jsonBody.put("password", password);
 
-                JSONObject data = new JSONObject();
-                data.put("email_confirm", false);
-                jsonBody.put("data", data);
 
                 String jsonInputString = jsonBody.toString();
                 Log.d(TAG, "Request JSON: " + jsonInputString);
@@ -238,13 +292,22 @@ public class LoginActivity extends AppCompatActivity {
                                 Toast.LENGTH_SHORT).show();
 
                         etPassword.setText("");
+
+
                     } else {
-                        String errorMsg = "Ошибка регистрации: " + responseCode;
-                        if (response != null && response.contains("error")) {
+                        String errorMsg = "Ошибка регистрации";
+                        if (response != null) {
                             try {
                                 JSONObject errorJson = new JSONObject(response);
-                                errorMsg = errorJson.getString("message");
+                                if (errorJson.has("error_description")) {
+                                    errorMsg = errorJson.getString("error_description");
+                                } else if (errorJson.has("msg")) {
+                                    errorMsg = errorJson.getString("msg");
+                                } else if (errorJson.has("message")) {
+                                    errorMsg = errorJson.getString("message");
+                                }
                             } catch (Exception e) {
+                                errorMsg = "Код ошибки: " + responseCode;
                             }
                         }
                         Toast.makeText(LoginActivity.this, errorMsg, Toast.LENGTH_LONG).show();
@@ -255,7 +318,7 @@ public class LoginActivity extends AppCompatActivity {
                 Log.e(TAG, "Sign up error: " + e.getMessage(), e);
                 mainHandler.post(() ->
                         Toast.makeText(LoginActivity.this,
-                                "Ошибка: " + e.getMessage(),
+                                "Ошибка сети: " + e.getMessage(),
                                 Toast.LENGTH_LONG).show()
                 );
             } finally {

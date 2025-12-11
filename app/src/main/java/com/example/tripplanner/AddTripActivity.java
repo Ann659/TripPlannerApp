@@ -1,5 +1,6 @@
 package com.example.tripplanner;
 
+import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
@@ -21,31 +22,27 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import android.content.Intent;
+import android.os.Bundle;
+import android.util.Log;
+
+
 public class AddTripActivity extends AppCompatActivity {
 
+    private static final String TAG = "AddTripActivity";
     private EditText etTripName, etBudget;
     private DatePicker datePicker;
     private Button btnSave;
-    private String accessToken;
-    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_add_trip);
 
-        SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
-        accessToken = prefs.getString("access_token", null);
-
-        if (accessToken == null || accessToken.isEmpty()) {
-            finish();
-            return;
-        }
+        Log.d(TAG, "AddTripActivity created");
 
         initViews();
-
-        btnSave.setOnClickListener(v -> saveTrip());
+        setupListeners();
     }
 
     private void initViews() {
@@ -63,20 +60,39 @@ public class AddTripActivity extends AppCompatActivity {
         );
     }
 
+    private void setupListeners() {
+        btnSave.setOnClickListener(v -> saveTrip());
+    }
+
     private void saveTrip() {
         String tripName = etTripName.getText().toString().trim();
         String budgetStr = etBudget.getText().toString().trim();
 
+        Log.d(TAG, "Saving trip: " + tripName + ", budget: " + budgetStr);
+
         if (tripName.isEmpty()) {
-            Toast.makeText(this, "Введите название поездки", Toast.LENGTH_SHORT).show();
+            etTripName.setError("Введите название поездки");
+            etTripName.requestFocus();
             return;
         }
 
-        double budget = 0;
+        if (budgetStr.isEmpty()) {
+            etBudget.setError("Введите бюджет");
+            etBudget.requestFocus();
+            return;
+        }
+
+        double budget;
         try {
             budget = Double.parseDouble(budgetStr);
+            if (budget <= 0) {
+                etBudget.setError("Бюджет должен быть больше 0");
+                etBudget.requestFocus();
+                return;
+            }
         } catch (NumberFormatException e) {
-            Toast.makeText(this, "Введите корректный бюджет", Toast.LENGTH_SHORT).show();
+            etBudget.setError("Введите корректное число");
+            etBudget.requestFocus();
             return;
         }
 
@@ -86,57 +102,25 @@ public class AddTripActivity extends AppCompatActivity {
 
         Calendar calendar = Calendar.getInstance();
         calendar.set(year, month, day);
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-        String dateStr = sdf.format(calendar.getTime());
+        long dateMillis = calendar.getTimeInMillis();
 
-        SharedPreferences prefs = getSharedPreferences("session", MODE_PRIVATE);
-        String userId = prefs.getString("user_id", "");
+        Intent resultIntent = new Intent();
+        resultIntent.putExtra("trip_name", tripName);
+        resultIntent.putExtra("trip_budget", budget);
+        resultIntent.putExtra("trip_date", dateMillis);
 
-        networkExecutor.execute(() -> {
-            try {
-                URL url = new URL(SupabaseConfig.TRIPS_TABLE_URL);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("apikey", SupabaseConfig.SUPABASE_ANON_KEY);
-                connection.setRequestProperty("Authorization", "Bearer " + accessToken);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Prefer", "return=minimal");
-                connection.setDoOutput(true);
+        setResult(RESULT_OK, resultIntent);
 
-                JSONObject jsonBody = new JSONObject();
-                jsonBody.put("trip_name", tripName);
-                jsonBody.put("trip_budget", budgetStr);
-                jsonBody.put("start_date", dateStr);
-                jsonBody.put("user_id", userId);
+        Toast.makeText(this, "Поездка '" + tripName + "' сохранена", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Trip saved, returning to MainActivity");
 
-                OutputStream os = connection.getOutputStream();
-                os.write(jsonBody.toString().getBytes());
-                os.flush();
-                os.close();
-
-                int responseCode = connection.getResponseCode();
-
-                mainHandler.post(() -> {
-                    if (responseCode == HttpURLConnection.HTTP_CREATED) {
-                        Toast.makeText(AddTripActivity.this, "Поездка добавлена", Toast.LENGTH_SHORT).show();
-                        finish();
-                    } else {
-                        Toast.makeText(AddTripActivity.this, "Ошибка: " + responseCode, Toast.LENGTH_SHORT).show();
-                    }
-                });
-
-                connection.disconnect();
-            } catch (Exception e) {
-                mainHandler.post(() ->
-                        Toast.makeText(AddTripActivity.this, "Ошибка: " + e.getMessage(), Toast.LENGTH_SHORT).show()
-                );
-            }
-        });
+        finish();
     }
 
+    @SuppressLint("GestureBackNavigation")
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        networkExecutor.shutdown();
+    public void onBackPressed() {
+        setResult(RESULT_CANCELED);
+        super.onBackPressed();
     }
 }

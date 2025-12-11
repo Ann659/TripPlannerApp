@@ -8,4 +8,20 @@ public class SupabaseConfig {
     public static final String AUTH_SIGNIN_URL = SUPABASE_URL + "/auth/v1/token?grant_type=password";
 
     public static final String TRIPS_TABLE_URL = SUPABASE_URL + "/rest/v1/trips";
+
+    public static String readStream(java.io.InputStream inputStream) {
+        try {
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(inputStream));
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+            reader.close();
+            return response.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 }

@@ -4,3 +4,6 @@
 просмотр списка запланированных поездок
 добавление новых поездок с указанием названия, бюджета и даты начала поездки
 Среди коммитов видео "работа приложения" показывает наглядно как работает приложение
+![photo_2025-12-11_21-21-53](https://github.com/user-attachments/assets/fd1cd75f-5e6d-4d90-8c17-135e2f2efae9)
+![photo_2025-12-11_21-37-16](https://github.com/user-attachments/assets/52058b84-7045-453d-8d74-b39d5adfb7da)
+![photo_2025-12-11_21-38-12](https://github.com/user-attachments/assets/633b6be8-9151-404d-93e3-e3b8f9e8fe5a)
